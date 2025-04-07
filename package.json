@@ -2,7 +2,7 @@
   "scripts": {
     "run-esbuild": "esbuild src/index.html src/index.ts src/style.css --loader:.html=copy --bundle --outdir=dist --define:process.env={} --metafile=dist/meta.json",
     "dev": "node --run run-esbuild -- --watch --servedir=dist",
-    "build": "node --run run-esbuild -- --minify"
+    "build": "node --run run-esbuild --"
   },
   "dependencies": {
     "@babel/generator": "8.0.0-alpha.17",
