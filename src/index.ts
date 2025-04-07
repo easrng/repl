@@ -184,8 +184,9 @@ function scopeCompletionSource(scopes: object[]): CompletionSource {
         };
     };
 }
+const editorParent = document.getElementById("editor")!;
 const view = new EditorView({
-    parent: document.getElementById("editor")!,
+    parent: editorParent,
     extensions: [
         keymap.of([
             {
@@ -216,8 +217,21 @@ const view = new EditorView({
         }),
     ],
 });
-view.dom.addEventListener("dblclick", () => {
-    if (!getSelection()?.toString()) {
+let lastSelection;
+let lastLastSelection;
+editorParent.addEventListener("mousedown", () => {
+    lastLastSelection = lastSelection;
+    lastSelection = view.state.selection.main.toJSON();
+});
+editorParent.addEventListener("dblclick", (e) => {
+    if (
+        lastLastSelection.head === lastLastSelection.anchor &&
+        lastLastSelection.head === view.state.selection.main.head
+    ) {
+        e.preventDefault();
+        view.dispatch({
+            selection: lastLastSelection,
+        });
         startCompletion(view);
     }
 });
