@@ -1,18 +1,40 @@
-import { basicSetup } from "codemirror";
-import { EditorView, keymap } from "@codemirror/view";
+import {
+    crosshairCursor,
+    drawSelection,
+    dropCursor,
+    EditorView,
+    highlightSpecialChars,
+    keymap,
+    rectangularSelection,
+} from "@codemirror/view";
 import {
     completionPath,
     javascript,
     javascriptLanguage,
 } from "@codemirror/lang-javascript";
 import {
+    autocompletion,
+    closeBrackets,
+    closeBracketsKeymap,
     Completion,
     CompletionContext,
+    completionKeymap,
     CompletionSource,
 } from "@codemirror/autocomplete";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { vscodeKeymap } from "@replit/codemirror-vscode-keymap";
 import { REPL } from "./repl";
 import "./console.ts";
+import { EditorState } from "@codemirror/state";
+import {
+    bracketMatching,
+    defaultHighlightStyle,
+    foldKeymap,
+    indentOnInput,
+    syntaxHighlighting,
+} from "@codemirror/language";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { lintKeymap } from "@codemirror/lint";
 const consoleElement = document.querySelector("easrng-console-logs")!;
 globalThis.addEventListener("unhandledrejection", (event) => {
     const log = {
@@ -116,7 +138,7 @@ function scopeCompletionSource(scopes: object[]): CompletionSource {
         };
     };
 }
-let history: string[] = [];
+let replHistory: string[] = [];
 let historyIndex = -1;
 const view = new EditorView({
     parent: document.getElementById("editor")!,
@@ -141,7 +163,7 @@ const view = new EditorView({
                             changes: {
                                 from: 0,
                                 to: code.length,
-                                insert: history[--historyIndex],
+                                insert: replHistory[--historyIndex],
                             },
                         });
                         return true;
@@ -152,13 +174,13 @@ const view = new EditorView({
             {
                 key: "ArrowDown",
                 run: () => {
-                    if (historyIndex < history.length) {
+                    if (historyIndex < replHistory.length) {
                         const code = view.state.doc.toString();
                         view.dispatch({
                             changes: {
                                 from: 0,
                                 to: code.length,
-                                insert: history[++historyIndex] ?? "",
+                                insert: replHistory[++historyIndex] ?? "",
                             },
                         });
                         return true;
@@ -167,7 +189,28 @@ const view = new EditorView({
                 },
             },
         ]),
-        basicSetup,
+        highlightSpecialChars(),
+        history(),
+        drawSelection(),
+        dropCursor(),
+        EditorState.allowMultipleSelections.of(true),
+        indentOnInput(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        bracketMatching(),
+        closeBrackets(),
+        autocompletion(),
+        rectangularSelection(),
+        crosshairCursor(),
+        highlightSelectionMatches(),
+        keymap.of([
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...searchKeymap,
+            ...historyKeymap,
+            ...foldKeymap,
+            ...completionKeymap,
+            ...lintKeymap,
+        ]),
         javascript(),
         javascriptLanguage.data.of({
             autocomplete: scopeCompletionSource([repl.scope, globalThis]),
@@ -177,7 +220,8 @@ const view = new EditorView({
 document.getElementById("run")!.addEventListener("click", send);
 async function send() {
     const code = view.state.doc.toString();
-    historyIndex = history.push(code);
+    if (!code.trim()) return;
+    historyIndex = replHistory.push(code);
     view.dispatch({
         changes: { from: 0, to: code.length, insert: "" },
     });
