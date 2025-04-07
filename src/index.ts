@@ -15,13 +15,12 @@ import {
 import {
     autocompletion,
     closeBrackets,
-    closeBracketsKeymap,
     Completion,
     CompletionContext,
-    completionKeymap,
     CompletionSource,
+    startCompletion,
 } from "@codemirror/autocomplete";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { history } from "@codemirror/commands";
 import { vscodeKeymap } from "@replit/codemirror-vscode-keymap";
 import { REPL } from "./repl";
 import "./console.ts";
@@ -29,13 +28,57 @@ import { EditorState } from "@codemirror/state";
 import {
     bracketMatching,
     defaultHighlightStyle,
-    foldKeymap,
     indentOnInput,
     syntaxHighlighting,
 } from "@codemirror/language";
-import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { lintKeymap } from "@codemirror/lint";
+import { highlightSelectionMatches } from "@codemirror/search";
+import { Log } from "./console.ts";
 const consoleElement = document.querySelector("easrng-console-logs")!;
+let pointerDownSelection: string | undefined;
+consoleElement.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse") {
+        e.preventDefault();
+    }
+    pointerDownSelection = getSelection()?.toString();
+});
+consoleElement.addEventListener("click", (e) => {
+    const log: Log = (e.target as any).closest(".log")?.log;
+    if (!log) return;
+    if (pointerDownSelection !== getSelection()?.toString()) return;
+    e.preventDefault();
+    if (log.type === "input") {
+        const str = log.args[1] as string;
+        view.dispatch({
+            changes: {
+                from: 0,
+                to: view.state.doc.toString().length,
+                insert: str,
+            },
+            selection: { anchor: str.length, head: str.length },
+        });
+    } else {
+        const tempval = log.args.length === 1
+            ? log.args[0]
+            : (log.args.length === 2 && log.args[0] === "%o" ||
+                    log.args[0] === "Uncaught %o" ||
+                    log.args[0] === "Uncaught (in promise) ")
+            ? log.args[1]
+            : log.args;
+        let i = 0, name;
+        while (
+            ((name = `temp${i}`) in repl.scope) && repl.scope[name] !== tempval
+        ) i++;
+        repl.scope[name] = tempval;
+        view.dispatch({
+            changes: {
+                from: 0,
+                to: view.state.doc.toString().length,
+                insert: name,
+            },
+            selection: { anchor: name.length, head: name.length },
+        });
+    }
+});
 globalThis.addEventListener("unhandledrejection", (event) => {
     const log = {
         type: "error",
@@ -71,6 +114,9 @@ globalThis.console = new Proxy(console, {
         }
     },
 });
+console.log(
+    "This JavaScript REPL is designed to be touch-friendly.\nTap log entries to assign them to a variable, or to edit and rerun code you already evaluated. Double-tap in the editor to bring up the autocomplete menu.",
+);
 const repl = new REPL();
 function enumeratePropertyCompletions(
     obj: any,
@@ -80,7 +126,7 @@ function enumeratePropertyCompletions(
     for (let depth = 0;; depth++) {
         for (let name of (Object.getOwnPropertyNames || Object.keys)(obj)) {
             if (
-                !/^[a-zA-Z_$\xaa-\uffdc][\w$\xaa-\uffdc]*$/.test(name) ||
+                !Identifier.test(name) ||
                 seen.has(name)
             ) continue;
             seen.add(name);
@@ -138,8 +184,6 @@ function scopeCompletionSource(scopes: object[]): CompletionSource {
         };
     };
 }
-let replHistory: string[] = [];
-let historyIndex = -1;
 const view = new EditorView({
     parent: document.getElementById("editor")!,
     extensions: [
@@ -152,42 +196,6 @@ const view = new EditorView({
                 },
             },
             ...vscodeKeymap,
-        ]),
-        keymap.of([
-            {
-                key: "ArrowUp",
-                run: () => {
-                    if (historyIndex > 0) {
-                        const code = view.state.doc.toString();
-                        view.dispatch({
-                            changes: {
-                                from: 0,
-                                to: code.length,
-                                insert: replHistory[--historyIndex],
-                            },
-                        });
-                        return true;
-                    }
-                    return false;
-                },
-            },
-            {
-                key: "ArrowDown",
-                run: () => {
-                    if (historyIndex < replHistory.length) {
-                        const code = view.state.doc.toString();
-                        view.dispatch({
-                            changes: {
-                                from: 0,
-                                to: code.length,
-                                insert: replHistory[++historyIndex] ?? "",
-                            },
-                        });
-                        return true;
-                    }
-                    return false;
-                },
-            },
         ]),
         highlightSpecialChars(),
         history(),
@@ -202,26 +210,24 @@ const view = new EditorView({
         rectangularSelection(),
         crosshairCursor(),
         highlightSelectionMatches(),
-        keymap.of([
-            ...closeBracketsKeymap,
-            ...defaultKeymap,
-            ...searchKeymap,
-            ...historyKeymap,
-            ...foldKeymap,
-            ...completionKeymap,
-            ...lintKeymap,
-        ]),
         javascript(),
         javascriptLanguage.data.of({
             autocomplete: scopeCompletionSource([repl.scope, globalThis]),
         }),
     ],
 });
-document.getElementById("run")!.addEventListener("click", send);
-async function send() {
+view.dom.addEventListener("dblclick", () => {
+    if (!getSelection()?.toString()) {
+        startCompletion(view);
+    }
+});
+const run = document.getElementById("run")!;
+run.addEventListener("mousedown", (e) => e.preventDefault());
+run.addEventListener("click", send);
+async function send(e?: Event) {
+    e?.preventDefault();
     const code = view.state.doc.toString();
     if (!code.trim()) return;
-    historyIndex = replHistory.push(code);
     view.dispatch({
         changes: { from: 0, to: code.length, insert: "" },
     });

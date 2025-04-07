@@ -14,7 +14,7 @@ import {
     render,
 } from "@easrng/elements/tiny";
 import inspect from "object-inspect";
-type Log = {
+export type Log = {
     type: string;
     args: unknown[];
     time: number;
@@ -29,7 +29,12 @@ const DefaultFormat: Component<{ args: unknown[] }> = ({ args, html }) => {
     function flush() {
         if (out.length) {
             styled.push(
-                css ? html`<span style=${css}>${out}</span>` : html`${out}`,
+                css
+                    ? Object.assign(document.createElement("span"), {
+                        textContent: out.join(""),
+                        style: css,
+                    })
+                    : document.createTextNode(out.join("")),
             );
             out = [];
         }
@@ -72,12 +77,7 @@ const DefaultFormat: Component<{ args: unknown[] }> = ({ args, html }) => {
                     ) {
                         // Format as an object.
                         formattedArg = inspect(args[a++]);
-                    } else if (char == "c") {
-                        const value = String(args[a++]);
-                        flush();
-                        css = value;
                     }
-
                     if (formattedArg != null) {
                         out.push(
                             String.prototype.slice.call(
@@ -88,6 +88,11 @@ const DefaultFormat: Component<{ args: unknown[] }> = ({ args, html }) => {
                                 formattedArg,
                         );
                         appendedChars = i + 1;
+                    }
+                    if (char == "c") {
+                        const value = String(args[a++]);
+                        flush();
+                        css = value;
                     }
                 }
                 if (char == "%") {
@@ -364,7 +369,11 @@ const LogLine: Component<{ log: Log }> = ({ log, html, context }) => {
         content = html`<${DefaultFormat} args=${log.args} />`;
     }
     return html`
-        <li class=${"log log-" + log.type}>${icon} ${content} ${stackEle}</li>
+        <li class=${"log log-" + log.type} ref=${{
+        set value(v: any) {
+            v.log = log;
+        },
+    }}>${icon} ${content} ${stackEle}</li>
       `;
 };
 class ConsoleLogs extends HTMLElement {
